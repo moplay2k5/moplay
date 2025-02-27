@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MOPLAY Snake Adventure - 100 Levels</title>
+    <link rel="stylesheet" href="snake_styles.css">
+</head>
+<body>
+    <div class="game-container">
+        <canvas id="gameCanvas" width="360" height="640"></canvas>
+        
+        <div class="game-info">
+            <div id="score" class="score">Score: 0</div>
+            <div id="level" class="level">Level: 1</div>
+            <div id="activePower" class="active-power">Speed Boost!</div>
+        </div>
+        
+        <div id="directionalButtons" class="directional-buttons">
+            <button id="upBtn" class="direction-btn up-btn">
+                <svg viewBox="0 0 24 24" width="24" height="24">
+                    <path d="M12 4l-8 8h16z" fill="currentColor"/>
+                </svg>
+            </button>
+            <div class="horizontal-buttons">
+                <button id="leftBtn" class="direction-btn left-btn">
+                    <svg viewBox="0 0 24 24" width="24" height="24">
+                        <path d="M4 12l8-8v16z" fill="currentColor"/>
+                    </svg>
+                </button>
+                <button id="rightBtn" class="direction-btn right-btn">
+                    <svg viewBox="0 0 24 24" width="24" height="24">
+                        <path d="M20 12l-8-8v16z" fill="currentColor"/>
+                    </svg>
+                </button>
+            </div>
+            <button id="downBtn" class="direction-btn down-btn">
+                <svg viewBox="0 0 24 24" width="24" height="24">
+                    <path d="M12 20l-8-8h16z" fill="currentColor"/>
+                </svg>
+            </button>
+        </div>
+        
+        <div id="menu" class="menu">
+            <div class="title-container">
+                <h1>Snake Adventure</h1>
+                <div class="subtitle">MOPLAY Ultimate Snake Game - 100 Levels</div>
+            </div>
+            <div class="btn-container">
+                <button id="startBtn" class="btn">Start Game</button>
+                <button id="levelSelectBtn" class="btn secondary">Level Select</button>
+                <button id="musicToggleBtn" class="btn tertiary">Music: Off</button>
+                <button id="radioToggleBtn" class="btn tertiary">Radio: Off</button>
+                <button id="darkModeBtn" class="btn tertiary">Dark Mode: Off</button>
+                <button id="exitBtn" class="btn tertiary">Exit</button>
+            </div>
+        </div>
+        
+        <div id="levelSelect" class="level-select hidden">
+            <h2>Select Level</h2>
+            <div class="level-buttons" id="levelButtons">
+                <!-- Level buttons will be created dynamically -->
+            </div>
+            <button id="backToMenuBtn" class="btn tertiary">Back to Menu</button>
+        </div>
+        
+        <div id="gameOver" class="game-over">
+            <h2>Game Over!</h2>
+            <div class="final-stats">
+                <p>Your score: <span id="finalScore">0</span></p>
+                <p>Level reached: <span id="finalLevel">1</span></p>
+            </div>
+            <div class="btn-container">
+                <button id="restartBtn" class="btn">Play Again</button>
+                <button id="menuBtn" class="btn tertiary">Main Menu</button>
+            </div>
+        </div>
+        
+        <div id="levelUpNotification" class="level-up-notification">
+            Level Up!
+        </div>
+        
+        <div id="loading" class="loading" style="display:none;">
+            <span class="loader"></span>
+        </div>
+    </div>
+
+    <script src="snake_game_100levels.js"></script>
+</body>
+</html>

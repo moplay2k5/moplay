@@ -1,0 +1,983 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MOPLAY Snake Adventure - 100 Levels</title>
+    <link rel="stylesheet" href="snake_styles.css">
+</head>
+<body>
+    <div class="game-container">
+        <canvas id="gameCanvas" width="360" height="640"></canvas>
+        
+        <div class="game-info">
+            <div id="score" class="score">Score: 0</div>
+            <div id="level" class="level">Level: 1</div>
+            <div id="activePower" class="active-power">Speed Boost!</div>
+        </div>
+        
+        <div id="directionalButtons" class="directional-buttons">
+            <button id="upBtn" class="direction-btn up-btn">
+                <svg viewBox="0 0 24 24" width="24" height="24">
+                    <path d="M12 4l-8 8h16z" fill="currentColor"/>
+                </svg>
+            </button>
+            <div class="horizontal-buttons">
+                <button id="leftBtn" class="direction-btn left-btn">
+                    <svg viewBox="0 0 24 24" width="24" height="24">
+                        <path d="M4 12l8-8v16z" fill="currentColor"/>
+                    </svg>
+                </button>
+                <button id="rightBtn" class="direction-btn right-btn">
+                    <svg viewBox="0 0 24 24" width="24" height="24">
+                        <path d="M20 12l-8-8v16z" fill="currentColor"/>
+                    </svg>
+                </button>
+            </div>
+            <button id="downBtn" class="direction-btn down-btn">
+                <svg viewBox="0 0 24 24" width="24" height="24">
+                    <path d="M12 20l-8-8h16z" fill="currentColor"/>
+                </svg>
+            </button>
+        </div>
+        
+        <div id="menu" class="menu">
+            <div class="title-container">
+                <h1>Snake Adventure</h1>
+                <div class="subtitle">MOPLAY Ultimate Snake Game - 100 Levels</div>
+            </div>
+            <div class="btn-container">
+                <button id="startBtn" class="btn">Start Game</button>
+                <button id="levelSelectBtn" class="btn secondary">Level Select</button>
+                <button id="musicToggleBtn" class="btn tertiary">Music: Off</button>
+                <button id="radioToggleBtn" class="btn tertiary">Radio: Off</button>
+                <button id="darkModeBtn" class="btn tertiary">Dark Mode: Off</button>
+                <button id="exitBtn" class="btn tertiary">Exit</button>
+            </div>
+        </div>
+        
+        <div id="levelSelect" class="level-select hidden">
+            <h2>Select Level</h2>
+            <div class="level-buttons" id="levelButtons">
+                <!-- Level buttons will be created dynamically -->
+            </div>
+            <button id="backToMenuBtn" class="btn tertiary">Back to Menu</button>
+        </div>
+        
+        <div id="gameOver" class="game-over">
+            <h2>Game Over!</h2>
+            <div class="final-stats">
+                <p>Your score: <span id="finalScore">0</span></p>
+                <p>Level reached: <span id="finalLevel">1</span></p>
+            </div>
+            <div class="btn-container">
+                <button id="restartBtn" class="btn">Play Again</button>
+                <button id="menuBtn" class="btn tertiary">Main Menu</button>
+            </div>
+        </div>
+        
+        <div id="levelUpNotification" class="level-up-notification">
+            Level Up!
+        </div>
+        
+        <div id="loading" class="loading" style="display:none;">
+            <span class="loader"></span>
+        </div>
+    </div>
+
+    <script>
+        // Include the original snake game JavaScript
+        const script = document.createElement('script');
+        script.src = 'snake_game.js';
+        document.head.appendChild(script);
+        
+        // Override functions after the game script loads
+        script.onload = function() {
+            // Add moving obstacles (enemy snakes) array
+            window.movingObstacles = [];
+            window.enemySnakeInterval = null;
+
+            // Add functions for 100 level generation
+            window.generateRandomObstacles = function(count, levelNum) {
+                let obstacles = [];
+                const margin = 2; // Keep obstacles away from edges
+                
+                // For static obstacles
+                for (let i = 0; i < count; i++) {
+                    let x, y, valid;
+                    let attempts = 0;
+                    
+                    do {
+                        valid = true;
+                        x = Math.floor(Math.random() * (cols - 2 * margin)) + margin;
+                        y = Math.floor(Math.random() * (rows - 2 * margin)) + margin;
+                        
+                        // Check if far enough from existing obstacles (to ensure paths)
+                        for (let obs of obstacles) {
+                            const distance = Math.abs(x - obs.x) + Math.abs(y - obs.y);
+                            if (distance < 3) { // Manhattan distance
+                                valid = false;
+                                break;
+                            }
+                        }
+                        
+                        attempts++;
+                        if (attempts > 50) {
+                            // If we've tried too many times, just accept what we have
+                            break;
+                        }
+                    } while (!valid);
+                    
+                    if (valid) {
+                        obstacles.push({x, y, width: 1, height: 1});
+                    }
+                }
+                
+                return obstacles;
+            };
+
+            window.createEnemySnake = function(levelNum) {
+                const margin = 2;
+                const length = Math.min(3, Math.floor((levelNum - 60) / 10) + 1); // Snake length increases with level
+                
+                // Create initial position
+                const x = Math.floor(Math.random() * (cols - 2 * margin)) + margin;
+                const y = Math.floor(Math.random() * (rows - 2 * margin)) + margin;
+                
+                // Create segments
+                const segments = [];
+                for (let i = 0; i < length; i++) {
+                    segments.push({x, y: y + i});
+                }
+                
+                return {
+                    segments: segments,
+                    direction: ['up', 'down', 'left', 'right'][Math.floor(Math.random() * 4)],
+                    color: '#ff4757', // Red color for enemy snakes
+                    moveInterval: Math.max(80, 300 - (levelNum - 60) * 3) // Gets faster with higher levels (min 80ms)
+                };
+            };
+
+            window.moveEnemySnakes = function() {
+                if (!gameRunning) return;
+                
+                for (let enemy of movingObstacles) {
+                    // Save previous head position
+                    const head = enemy.segments[0];
+                    const prevX = head.x;
+                    const prevY = head.y;
+                    
+                    // Occasionally change direction
+                    if (Math.random() < 0.1) {
+                        enemy.direction = ['up', 'down', 'left', 'right'][Math.floor(Math.random() * 4)];
+                    }
+                    
+                    // Create new head position
+                    let newX = head.x;
+                    let newY = head.y;
+                    
+                    // Move based on direction
+                    switch (enemy.direction) {
+                        case 'up': newY--; break;
+                        case 'down': newY++; break;
+                        case 'left': newX--; break;
+                        case 'right': newX++; break;
+                    }
+                    
+                    // Wrap around screen edges
+                    if (newX < 0) newX = cols - 1;
+                    if (newX >= cols) newX = 0;
+                    if (newY < 0) newY = rows - 1;
+                    if (newY >= rows) newY = 0;
+                    
+                    // Check if hit static obstacle, if so change direction
+                    let hitObstacle = false;
+                    for (let obs of obstacles) {
+                        if (newX === obs.x && newY === obs.y) {
+                            hitObstacle = true;
+                            break;
+                        }
+                    }
+                    
+                    // Check if hit player snake (except head)
+                    for (let i = 1; i < snake.length; i++) {
+                        if (newX === snake[i].x && newY === snake[i].y) {
+                            hitObstacle = true;
+                            break;
+                        }
+                    }
+                    
+                    if (hitObstacle) {
+                        // Try a different direction
+                        enemy.direction = ['up', 'down', 'left', 'right'][Math.floor(Math.random() * 4)];
+                    } else {
+                        // Add new head
+                        enemy.segments.unshift({x: newX, y: newY});
+                        // Remove tail
+                        enemy.segments.pop();
+                    }
+                }
+            };
+
+            window.checkEnemySnakeCollision = function(x, y) {
+                for (let enemy of movingObstacles) {
+                    for (let segment of enemy.segments) {
+                        if (segment.x === x && segment.y === y) {
+                            return true;
+                        }
+                    }
+                }
+                return false;
+            };
+
+            // Generate 100 progressive levels
+            window.generateLevels = function() {
+                const newLevels = [];
+                
+                // Level 1-10: Basics and gradual introduction
+                newLevels.push({
+                    name: "Classic",
+                    description: "The classic snake game",
+                    speed: 130,
+                    obstacles: [],
+                    powerUpFrequency: 0.2,
+                    foodWorth: 10,
+                    hasMovingObstacles: false
+                });
+                
+                newLevels.push({
+                    name: "Speedy",
+                    description: "Everything moves faster!",
+                    speed: 110,
+                    obstacles: [],
+                    powerUpFrequency: 0.25,
+                    foodWorth: 15,
+                    hasMovingObstacles: false
+                });
+                
+                // Keep the original level 3
+                newLevels.push({
+                    name: "First Obstacle",
+                    description: "Your first obstacle",
+                    speed: 125,
+                    obstacles: [
+                        {x: 12, y: 12, width: 1, height: 1}
+                    ],
+                    powerUpFrequency: 0.25,
+                    foodWorth: 15,
+                    hasMovingObstacles: false
+                });
+                
+                // Victory Lap (level 4)
+                newLevels.push({
+                    name: "Victory Lap",
+                    description: "Celebration level",
+                    speed: 100,
+                    obstacles: [],
+                    powerUpFrequency: 1.0,
+                    foodWorth: 100,
+                    hasMovingObstacles: false
+                });
+                
+                // Level 5-20: Increasing obstacles
+                for (let i = 5; i <= 20; i++) {
+                    const obstacleCount = Math.floor((i - 2) / 2); // Gradually increasing obstacles
+                    newLevels.push({
+                        name: `Obstacle Stage ${i-4}`,
+                        description: `Navigate through ${obstacleCount} obstacles`,
+                        speed: Math.max(90, 130 - (i-3) * 2),
+                        obstacleCount: obstacleCount,
+                        powerUpFrequency: 0.25 + (i/100),
+                        foodWorth: 10 + i,
+                        hasMovingObstacles: false
+                    });
+                }
+                
+                // Level 21-40: More challenging with more obstacles
+                for (let i = 21; i <= 40; i++) {
+                    const obstacleCount = 8 + Math.floor((i - 20) / 2); // 8, 8, 9, 9...
+                    newLevels.push({
+                        name: `Challenge ${i-20}`,
+                        description: `Dodge ${obstacleCount} obstacles at high speed`,
+                        speed: Math.max(75, 95 - (i-20)),
+                        obstacleCount: obstacleCount,
+                        powerUpFrequency: 0.3 + (i/100),
+                        foodWorth: 20 + i,
+                        hasMovingObstacles: false
+                    });
+                }
+                
+                // Level 41-60: Expert levels
+                for (let i = 41; i <= 60; i++) {
+                    const obstacleCount = 15 + Math.floor((i - 40) / 2); // 15, 15, 16, 16...
+                    newLevels.push({
+                        name: `Expert Stage ${i-40}`,
+                        description: `For skilled players only! ${obstacleCount} obstacles!`,
+                        speed: Math.max(60, 80 - Math.floor((i-40)/2)),
+                        obstacleCount: obstacleCount,
+                        powerUpFrequency: 0.4 + (i/100),
+                        foodWorth: 30 + i,
+                        hasMovingObstacles: false
+                    });
+                }
+                
+                // Level 61-80: Enemy snakes appear
+                for (let i = 61; i <= 80; i++) {
+                    const obstacleCount = 12 + Math.floor((i - 60) / 3); // Fewer obstacles but with moving enemies
+                    const enemyCount = Math.min(3, Math.floor((i - 60) / 6) + 1); // 1-3 enemies
+                    
+                    newLevels.push({
+                        name: `Enemy Territory ${i-60}`,
+                        description: `Watch out for ${enemyCount} red snakes!`,
+                        speed: Math.max(60, 75 - Math.floor((i-60)/3)),
+                        obstacleCount: obstacleCount,
+                        powerUpFrequency: 0.5 + (i/100),
+                        foodWorth: 40 + i,
+                        hasMovingObstacles: true,
+                        enemyCount: enemyCount
+                    });
+                }
+                
+                // Level 81-99: Master levels
+                for (let i = 81; i <= 99; i++) {
+                    const obstacleCount = 8 + Math.floor((i - 80) / 2); // Fewer static obstacles
+                    const enemyCount = Math.min(5, Math.floor((i - 80) / 4) + 3); // 3-5 enemies
+                    
+                    newLevels.push({
+                        name: `Master Challenge ${i-80}`,
+                        description: `The ultimate test: ${obstacleCount} obstacles and ${enemyCount} enemies!`,
+                        speed: Math.max(50, 65 - Math.floor((i-80)/4)),
+                        obstacleCount: obstacleCount,
+                        powerUpFrequency: 0.6 + (i/100),
+                        foodWorth: 50 + i,
+                        hasMovingObstacles: true,
+                        enemyCount: enemyCount
+                    });
+                }
+                
+                // Level 100: Final challenge
+                newLevels.push({
+                    name: "Snake Master",
+                    description: "You've reached the final challenge!",
+                    speed: 40, // Very fast
+                    obstacleCount: 10, // Moderate obstacles
+                    powerUpFrequency: 1.0, // Many power-ups
+                    foodWorth: 200,
+                    hasMovingObstacles: true,
+                    enemyCount: 6 // Many enemies
+                });
+                
+                return newLevels;
+            };
+
+            // Replace the levels array with our 100 levels
+            window.levels = generateLevels();
+            
+            // Update createLevelButtons to handle 100 levels
+            const originalCreateLevelButtons = window.createLevelButtons;
+            window.createLevelButtons = function() {
+                levelButtonsContainer.innerHTML = '';
+                
+                // Show all 100 levels but in groups of 10
+                const totalGroups = Math.ceil(levels.length / 10);
+                
+                for (let group = 0; group < totalGroups; group++) {
+                    // Create group header
+                    const groupHeader = document.createElement('div');
+                    groupHeader.className = 'level-group-header';
+                    groupHeader.textContent = `Levels ${group * 10 + 1}-${Math.min((group + 1) * 10, levels.length)}`;
+                    levelButtonsContainer.appendChild(groupHeader);
+                    
+                    // Create level buttons container for this group
+                    const groupButtons = document.createElement('div');
+                    groupButtons.className = 'level-group';
+                    
+                    // Add buttons for this group
+                    for (let i = 0; i < 10 && (group * 10 + i) < levels.length; i++) {
+                        const levelNum = group * 10 + i + 1;
+                        const button = document.createElement('div');
+                        button.className = `level-btn ${levelNum > highestLevelUnlocked ? 'locked' : ''}`;
+                        button.textContent = levelNum;
+                        
+                        if (levelNum <= highestLevelUnlocked) {
+                            button.addEventListener('click', () => {
+                                startGame(levelNum);
+                            });
+                            
+                            // Add a tooltip with level name and description
+                            const levelData = levels[levelNum - 1];
+                            button.title = `${levelData.name}: ${levelData.description}`;
+                        }
+                        
+                        groupButtons.appendChild(button);
+                    }
+                    
+                    levelButtonsContainer.appendChild(groupButtons);
+                }
+            };
+
+            // Add CSS styles for level groups
+            const style = document.createElement('style');
+            style.textContent = `
+                .level-group-header {
+                    width: 100%;
+                    text-align: center;
+                    margin-top: 15px;
+                    margin-bottom: 5px;
+                    font-weight: bold;
+                    color: var(--primary);
+                }
+                
+                .level-group {
+                    display: flex;
+                    flex-wrap: wrap;
+                    justify-content: center;
+                    gap: 8px;
+                    margin-bottom: 10px;
+                }
+                
+                body.dark-mode .level-group-header {
+                    color: var(--primary-light);
+                }
+            `;
+            document.head.appendChild(style);
+
+            // Enhance the resetGame function to handle dynamic obstacles and enemy snakes
+            const originalResetGame = window.resetGame;
+            window.resetGame = function(levelNum = 1) {
+                // Clear any existing interval
+                clearInterval(gameInterval);
+                clearInterval(enemySnakeInterval);
+                clearTimeout(powerUpTimer);
+                
+                // Get level data
+                const levelData = levels[levelNum - 1] || levels[0];
+                
+                // Reset game state
+                gameRunning = false;
+                gameScore = 0;
+                direction = 'right';
+                nextDirection = 'right';
+                level = levelNum;
+                baseGameSpeed = levelData.speed;
+                gameSpeed = baseGameSpeed;
+                foodWorth = levelData.foodWorth;
+                activePowerUp = null;
+                powerUps = [];
+                movingObstacles = [];
+                
+                // Create obstacles based on level data
+                obstacles = [];
+                
+                if (levelData && levelData.obstacleCount) {
+                    // Use the new dynamic obstacle generation
+                    const newObstacles = generateRandomObstacles(levelData.obstacleCount, levelNum);
+                    obstacles = newObstacles;
+                } else if (levelData && levelData.obstacles) {
+                    // This is for backward compatibility with levels 1-3
+                    levelData.obstacles.forEach(obs => {
+                        for (let x = obs.x; x < obs.x + obs.width; x++) {
+                            for (let y = obs.y; y < obs.y + obs.height; y++) {
+                                obstacles.push({x, y});
+                            }
+                        }
+                    });
+                }
+                
+                // Create enemy snakes for higher levels
+                if (levelData && levelData.hasMovingObstacles) {
+                    for (let i = 0; i < levelData.enemyCount; i++) {
+                        movingObstacles.push(createEnemySnake(levelNum));
+                    }
+                }
+                
+                // Create snake - Adjusted for 9:16 aspect ratio
+                const startX = Math.floor(cols / 4);
+                const startY = Math.floor(rows / 3);
+                
+                snake = [
+                    {x: startX, y: startY},
+                    {x: startX - 1, y: startY},
+                    {x: startX - 2, y: startY}
+                ];
+                
+                // Create food
+                createFood();
+                
+                // Update UI
+                updateScore();
+                updateLevel();
+                
+                // Draw initial game state
+                draw();
+                
+                console.log(`Game reset to level ${level}`);
+            };
+
+            // Override with fixed level up function
+            window.levelUp = function() {
+                level++;
+                if (level > highestLevelUnlocked) {
+                    highestLevelUnlocked = level;
+                    saveHighestLevel();
+                    createLevelButtons();
+                }
+                
+                updateLevel();
+                showLevelUpNotification();
+                
+                // Save the current score before resetting
+                const currentScore = gameScore;
+                
+                // Update game parameters based on new level
+                const levelData = levels[level - 1] || levels[0];
+                baseGameSpeed = levelData.speed;
+                gameSpeed = baseGameSpeed;
+                foodWorth = levelData.foodWorth;
+                
+                // Reset the game with new level obstacles and enemies
+                resetGame(level);
+                
+                // Restore the score that was reset in resetGame()
+                gameScore = currentScore;
+                updateScore();
+                
+                // Set game to running since resetGame sets it to false
+                gameRunning = true;
+                
+                // Reset game interval with new speed
+                clearInterval(gameInterval);
+                gameInterval = setInterval(gameLoop, gameSpeed);
+                
+                // Start enemy movement for levels with moving obstacles
+                if (levelData && levelData.hasMovingObstacles) {
+                    enemySnakeInterval = setInterval(moveEnemySnakes, 200);
+                }
+            };
+
+            // Enhance the startGame function
+            const originalStartGame = window.startGame;
+            window.startGame = function(levelNum = 1) {
+                showLoading();
+                
+                setTimeout(() => {
+                    resetGame(levelNum);
+                    menu.classList.add('hidden');
+                    levelSelect.classList.add('hidden');
+                    gameInfo.style.display = 'flex';
+                    gameOver.classList.remove('show');
+                    gameRunning = true;
+                    
+                    // Start game loop
+                    gameInterval = setInterval(gameLoop, gameSpeed);
+                    
+                    // Start enemy snake movement for levels that have them
+                    const levelData = levels[levelNum - 1];
+                    if (levelData && levelData.hasMovingObstacles) {
+                        enemySnakeInterval = setInterval(moveEnemySnakes, 200);
+                    }
+                    
+                    hideLoading();
+                    console.log(`Starting game at level ${level}`);
+                }, 500); // Simulate loading time
+            };
+
+            // Enhance the createFood function to check for enemy snake collisions
+            const originalCreateFood = window.createFood;
+            window.createFood = function() {
+                // Find a position that's not on the snake or obstacles
+                let foodOnSnakeOrObstacle;
+                do {
+                    foodOnSnakeOrObstacle = false;
+                    food = {
+                        x: Math.floor(Math.random() * cols),
+                        y: Math.floor(Math.random() * rows)
+                    };
+                    
+                    // Check if food is on snake
+                    for (let segment of snake) {
+                        if (segment.x === food.x && segment.y === food.y) {
+                            foodOnSnakeOrObstacle = true;
+                            break;
+                        }
+                    }
+                    
+                    // Check if food is on obstacle
+                    if (!foodOnSnakeOrObstacle) {
+                        for (let obstacle of obstacles) {
+                            if (obstacle.x === food.x && obstacle.y === food.y) {
+                                foodOnSnakeOrObstacle = true;
+                                break;
+                            }
+                        }
+                    }
+                    
+                    // Check if food is on moving obstacles (enemy snakes)
+                    if (!foodOnSnakeOrObstacle) {
+                        if (checkEnemySnakeCollision(food.x, food.y)) {
+                            foodOnSnakeOrObstacle = true;
+                        }
+                    }
+                    
+                    // Check if food is on power-up
+                    if (!foodOnSnakeOrObstacle) {
+                        for (let powerUp of powerUps) {
+                            if (powerUp.x === food.x && powerUp.y === food.y) {
+                                foodOnSnakeOrObstacle = true;
+                                break;
+                            }
+                        }
+                    }
+                } while (foodOnSnakeOrObstacle);
+                
+                // Maybe spawn a power-up
+                const levelData = levels[level - 1] || levels[0];
+                if (levelData && Math.random() < levelData.powerUpFrequency) {
+                    window.createPowerUp();
+                }
+            };
+
+            // Enhance the game loop to check for enemy snake collisions
+            const originalGameLoop = window.gameLoop;
+            window.gameLoop = function() {
+                if (!gameRunning) return;
+                
+                // Update direction
+                direction = nextDirection;
+                
+                // Create new head
+                const head = {x: snake[0].x, y: snake[0].y};
+                
+                // Move head based on direction
+                switch (direction) {
+                    case 'up': head.y--; break;
+                    case 'down': head.y++; break;
+                    case 'left': head.x--; break;
+                    case 'right': head.x++; break;
+                }
+                
+                // Snake wraps around at edges instead of colliding
+                if (head.x < 0) {
+                    head.x = cols - 1; // Wrap to right side
+                } else if (head.x >= cols) {
+                    head.x = 0; // Wrap to left side
+                }
+                
+                if (head.y < 0) {
+                    head.y = rows - 1; // Wrap to bottom
+                } else if (head.y >= rows) {
+                    head.y = 0; // Wrap to top
+                }
+                
+                // Check obstacle collisions
+                if (checkObstacleCollision(head.x, head.y)) {
+                    endGame();
+                    return;
+                }
+                
+                // Check enemy snake collisions
+                if (checkEnemySnakeCollision(head.x, head.y)) {
+                    endGame();
+                    return;
+                }
+                
+                // Check self collisions
+                if (checkSelfCollision(head.x, head.y)) {
+                    endGame();
+                    return;
+                }
+                
+                // Check if food eaten
+                if (head.x === food.x && head.y === food.y) {
+                    // Add new head
+                    snake.unshift(head);
+                    
+                    // Create new food
+                    createFood();
+                    
+                    // Increase score and play eat sound
+                    gameScore += foodWorth;
+                    updateScore();
+                    
+                    // Play eating sound
+                    eatSound.currentTime = 0;
+                    eatSound.play().catch(err => console.log("Could not play eat sound:", err));
+                    
+                    // Check for level up
+                    const scoreThreshold = level * 100;
+                    if (gameScore >= scoreThreshold && level < levels.length) {
+                        levelUp();
+                    }
+                } else {
+                    // Check if power-up eaten
+                    const powerUpIndex = powerUps.findIndex(p => p.x === head.x && p.y === head.y);
+                    if (powerUpIndex !== -1) {
+                        const powerUp = powerUps[powerUpIndex];
+                        powerUps.splice(powerUpIndex, 1);
+                        activatePowerUp(powerUp);
+                        
+                        // Add points for power-up
+                        gameScore += 5;
+                        updateScore();
+                        
+                        // Play power-up sound
+                        powerUpSound.currentTime = 0;
+                        powerUpSound.play().catch(err => console.log("Could not play power-up sound:", err));
+                    }
+                    
+                    // Remove tail and add new head
+                    snake.pop();
+                    snake.unshift(head);
+                }
+                
+                // Redraw game
+                draw();
+            };
+
+            // Enhance the draw function to render enemy snakes
+            const originalDraw = window.draw;
+            window.draw = function() {
+                // Clear canvas
+                ctx.clearRect(0, 0, width, height);
+                
+                // Draw background
+                ctx.fillStyle = darkMode ? '#1e1e30' : '#f8f9ff';
+                ctx.fillRect(0, 0, width, height);
+                
+                // Draw grid (subtle lines)
+                ctx.strokeStyle = darkMode ? '#2a2a40' : '#e0e0e0';
+                ctx.lineWidth = 0.5;
+                
+                for (let i = 0; i <= width; i += gridSize) {
+                    ctx.beginPath();
+                    ctx.moveTo(i, 0);
+                    ctx.lineTo(i, height);
+                    ctx.stroke();
+                }
+                
+                for (let i = 0; i <= height; i += gridSize) {
+                    ctx.beginPath();
+                    ctx.moveTo(0, i);
+                    ctx.lineTo(width, i);
+                    ctx.stroke();
+                }
+                
+                // Draw obstacles
+                ctx.fillStyle = darkMode ? '#444455' : '#555555';
+                for (let obstacle of obstacles) {
+                    ctx.fillRect(
+                        obstacle.x * gridSize,
+                        obstacle.y * gridSize,
+                        gridSize,
+                        gridSize
+                    );
+                }
+                
+                // Draw enemy snakes (moving obstacles)
+                for (let enemy of movingObstacles) {
+                    // Draw enemy snake with red color
+                    for (let i = 0; i < enemy.segments.length; i++) {
+                        const segment = enemy.segments[i];
+                        const isHead = i === 0;
+                        
+                        ctx.fillStyle = isHead ? '#ff3040' : '#ff6b7a';
+                        
+                        const x = segment.x * gridSize;
+                        const y = segment.y * gridSize;
+                        
+                        // Draw rounded snake segments
+                        const radius = isHead ? 6 : 4;
+                        ctx.beginPath();
+                        ctx.roundRect(
+                            x + 1,
+                            y + 1,
+                            gridSize - 2,
+                            gridSize - 2,
+                            radius
+                        );
+                        ctx.fill();
+                        
+                        // Draw eyes on enemy head
+                        if (isHead) {
+                            ctx.fillStyle = darkMode ? '#000000' : '#ffffff';
+                            
+                            // Position eyes based on direction
+                            let eye1X, eye1Y, eye2X, eye2Y;
+                            
+                            switch (enemy.direction) {
+                                case 'up':
+                                    eye1X = x + gridSize / 3;
+                                    eye1Y = y + gridSize / 3;
+                                    eye2X = x + gridSize * 2/3;
+                                    eye2Y = y + gridSize / 3;
+                                    break;
+                                case 'down':
+                                    eye1X = x + gridSize / 3;
+                                    eye1Y = y + gridSize * 2/3;
+                                    eye2X = x + gridSize * 2/3;
+                                    eye2Y = y + gridSize * 2/3;
+                                    break;
+                                case 'left':
+                                    eye1X = x + gridSize / 3;
+                                    eye1Y = y + gridSize / 3;
+                                    eye2X = x + gridSize / 3;
+                                    eye2Y = y + gridSize * 2/3;
+                                    break;
+                                case 'right':
+                                    eye1X = x + gridSize * 2/3;
+                                    eye1Y = y + gridSize / 3;
+                                    eye2X = x + gridSize * 2/3;
+                                    eye2Y = y + gridSize * 2/3;
+                                    break;
+                            }
+                            
+                            ctx.beginPath();
+                            ctx.arc(eye1X, eye1Y, 3, 0, Math.PI * 2);
+                            ctx.arc(eye2X, eye2Y, 3, 0, Math.PI * 2);
+                            ctx.fill();
+                        }
+                    }
+                }
+                
+                // Draw power-ups
+                for (let powerUp of powerUps) {
+                    ctx.fillStyle = powerUp.type.color;
+                    ctx.beginPath();
+                    ctx.arc(
+                        powerUp.x * gridSize + gridSize / 2,
+                        powerUp.y * gridSize + gridSize / 2,
+                        gridSize / 2 - 2,
+                        0,
+                        Math.PI * 2
+                    );
+                    ctx.fill();
+                    
+                    // Draw a star or symbol in the center
+                    ctx.fillStyle = 'white';
+                    ctx.beginPath();
+                    ctx.arc(
+                        powerUp.x * gridSize + gridSize / 2,
+                        powerUp.y * gridSize + gridSize / 2,
+                        gridSize / 4,
+                        0,
+                        Math.PI * 2
+                    );
+                    ctx.fill();
+                }
+                
+                // Draw food (with animation effect)
+                ctx.fillStyle = '#ff4757';
+                const pulse = Math.sin(Date.now() / 200) * 2;
+                ctx.beginPath();
+                ctx.arc(
+                    food.x * gridSize + gridSize / 2,
+                    food.y * gridSize + gridSize / 2,
+                    (gridSize / 2 - 2) + pulse,
+                    0,
+                    Math.PI * 2
+                );
+                ctx.fill();
+                
+                // Draw snake segments with gradient effect
+                for (let i = 0; i < snake.length; i++) {
+                    // Calculate color based on position in snake
+                    const ratio = i / snake.length;
+                    
+                    if (activePowerUp) {
+                        // Special coloring for power-ups
+                        if (activePowerUp.type.name === 'speed') {
+                            ctx.fillStyle = i === 0 ? '#20bf6b' : `hsl(153, 71%, ${50 + ratio * 20}%)`;
+                        } else if (activePowerUp.type.name === 'invulnerability') {
+                            ctx.fillStyle = i === 0 ? '#3b82f6' : `hsl(217, 91%, ${60 + ratio * 20}%)`;
+                        } else {
+                            ctx.fillStyle = i === 0 ? '#7841c9' : `hsl(262, 61%, ${50 + ratio * 20}%)`;
+                        }
+                    } else {
+                        // Normal snake coloring
+                        ctx.fillStyle = i === 0 ? '#7841c9' : `hsl(262, 61%, ${50 + ratio * 20}%)`;
+                    }
+                    
+                    const x = snake[i].x * gridSize;
+                    const y = snake[i].y * gridSize;
+                    
+                    // Draw rounded snake segments
+                    const radius = i === 0 ? 6 : 4;
+                    ctx.beginPath();
+                    ctx.roundRect(
+                        x + 1,
+                        y + 1,
+                        gridSize - 2,
+                        gridSize - 2,
+                        radius
+                    );
+                    ctx.fill();
+                    
+                    // Draw eyes on head
+                    if (i === 0) {
+                        ctx.fillStyle = 'white';
+                        
+                        // Position eyes based on direction
+                        let eye1X, eye1Y, eye2X, eye2Y;
+                        
+                        switch (direction) {
+                            case 'up':
+                                eye1X = x + gridSize / 3;
+                                eye1Y = y + gridSize / 3;
+                                eye2X = x + gridSize * 2/3;
+                                eye2Y = y + gridSize / 3;
+                                break;
+                            case 'down':
+                                eye1X = x + gridSize / 3;
+                                eye1Y = y + gridSize * 2/3;
+                                eye2X = x + gridSize * 2/3;
+                                eye2Y = y + gridSize * 2/3;
+                                break;
+                            case 'left':
+                                eye1X = x + gridSize / 3;
+                                eye1Y = y + gridSize / 3;
+                                eye2X = x + gridSize / 3;
+                                eye2Y = y + gridSize * 2/3;
+                                break;
+                            case 'right':
+                                eye1X = x + gridSize * 2/3;
+                                eye1Y = y + gridSize / 3;
+                                eye2X = x + gridSize * 2/3;
+                                eye2Y = y + gridSize * 2/3;
+                                break;
+                        }
+                        
+                        ctx.beginPath();
+                        ctx.arc(eye1X, eye1Y, 3, 0, Math.PI * 2);
+                        ctx.arc(eye2X, eye2Y, 3, 0, Math.PI * 2);
+                        ctx.fill();
+                    }
+                }
+            };
+
+            // Update endGame to clear enemy snake interval
+            const originalEndGame = window.endGame;
+            window.endGame = function() {
+                gameRunning = false;
+                clearInterval(gameInterval);
+                clearInterval(enemySnakeInterval);
+                
+                // Clear any active power-up
+                if (activePowerUp) {
+                    activePowerUp.cleanup();
+                    activePowerUp = null;
+                    clearTimeout(powerUpTimer);
+                }
+                
+                gameOver.classList.add('show');
+                
+                console.log("Game over");
+            };
+            
+            console.log("100 levels installed successfully!");
+            
+            // Call createLevelButtons to rebuild with the new 100 levels
+            createLevelButtons();
+        };
+    </script>
+</body>
+</html>
