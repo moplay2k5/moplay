@@ -123,7 +123,7 @@ const levels = [
     // Level 1-10: Basics and simple obstacles
     {
         name: "Classic",
-        description: "The classic snake game",
+        description: "The snake game",
         speed: 130,
         obstacles: [],
         powerUpFrequency: 0.2,
