@@ -30,6 +30,30 @@ const height = canvas.height;
 const cols = Math.floor(width / gridSize);
 const rows = Math.floor(height / gridSize);
 
+// Add this after other global variables
+const cherryImg = new Image();
+cherryImg.src = 'cherry.png';
+
+// Make sure the cherry image is loaded before starting the game
+cherryImg.onload = function() {
+    console.log("Cherry image loaded successfully");
+};
+
+cherryImg.onerror = function() {
+    console.error("Error loading cherry image");
+    // Fallback to circular food if image fails to load
+    cherryImg.loadFailed = true;
+};
+
+// Particle system
+let particles = [];
+const particleColors = {
+    food: ['#ff4757', '#ff6b81', '#ff4757', '#ff6b81', '#ffffff'],
+    speed: ['#20bf6b', '#26de81', '#20bf6b', '#2ecc71', '#ffffff'],
+    grow: ['#f7b731', '#ffdd59', '#f7b731', '#ffdd59', '#ffffff'],
+    invulnerability: ['#3b82f6', '#60a5fa', '#3b82f6', '#60a5fa', '#ffffff']
+};
+
 // Game state
 let snake = [];
 let food = {};
@@ -449,6 +473,14 @@ function setupEventListeners() {
         console.log("Level select button clicked");
         showLevelSelect();
     });
+
+    // Add this to the setupEventListeners function (Pause function)
+    const pauseButton = document.getElementById('pauseButton');
+    pauseButton.addEventListener('click', togglePause);
+    pauseButton.addEventListener('touchstart', function(e) {
+        e.preventDefault();
+        togglePause();
+    }, { passive: false });
     
     musicToggleBtn.addEventListener('click', toggleMusic);
     radioToggleBtn.addEventListener('click', toggleRadio);
@@ -764,12 +796,16 @@ function setupTouchControls() {
     }, { passive: false });
 }
 
-// Create food
+// Modify the createFood function to avoid UI areas
 function createFood() {
-    // Find a position that's not on the snake or obstacles
+    // Find a position that's not on the snake, obstacles, or UI elements
     let foodOnSnakeOrObstacle;
+    let uiConflict;
+    
     do {
         foodOnSnakeOrObstacle = false;
+        uiConflict = false;
+        
         food = {
             x: Math.floor(Math.random() * cols),
             y: Math.floor(Math.random() * rows)
@@ -809,7 +845,19 @@ function createFood() {
                 }
             }
         }
-    } while (foodOnSnakeOrObstacle);
+        
+        // NEW CODE: Check if food is in UI areas (top for score/level, bottom for arrow keys)
+        // Avoid top 3 rows (for score and level display)
+        if (food.y < 3) {
+            uiConflict = true;
+        }
+        
+        // Avoid bottom 5 rows (for directional buttons)
+        if (food.y > rows - 5) {
+            uiConflict = true;
+        }
+        
+    } while (foodOnSnakeOrObstacle || uiConflict);
     
     // Maybe spawn a power-up
     const levelData = levels[level - 1] || levels[0];
@@ -823,12 +871,15 @@ function createPowerUp() {
     // Select a random power-up type
     const powerUpType = powerUpTypes[Math.floor(Math.random() * powerUpTypes.length)];
     
-    // Find a position that's not on the snake, food, or obstacles
+    // Find a position that's not on the snake, food, obstacles, or UI elements
     let powerUpOnOtherObjects;
+    let uiConflict;
     let newPowerUp;
     
     do {
         powerUpOnOtherObjects = false;
+        uiConflict = false;
+        
         newPowerUp = {
             x: Math.floor(Math.random() * cols),
             y: Math.floor(Math.random() * rows),
@@ -874,7 +925,19 @@ function createPowerUp() {
                 }
             }
         }
-    } while (powerUpOnOtherObjects);
+        
+        // NEW CODE: Check if power-up is in UI areas (top for score/level, bottom for arrow keys)
+        // Avoid top 3 rows (for score and level display)
+        if (newPowerUp.y < 3) {
+            uiConflict = true;
+        }
+        
+        // Avoid bottom 5 rows (for directional buttons)
+        if (newPowerUp.y > rows - 5) {
+            uiConflict = true;
+        }
+        
+    } while (powerUpOnOtherObjects || uiConflict);
     
     powerUps.push(newPowerUp);
     
@@ -965,6 +1028,57 @@ function checkSelfCollision(x, y) {
     return false;
 }
 
+// Create particles when collecting food or power-ups
+function createParticles(x, y, type = 'food', count = 15) {
+    const colors = particleColors[type];
+    
+    for (let i = 0; i < count; i++) {
+        const speed = 1 + Math.random() * 3;
+        const angle = Math.random() * Math.PI * 2; // Random direction
+        const size = 2 + Math.random() * 4;
+        const life = 30 + Math.random() * 30; // How long the particle lives
+        
+        particles.push({
+            x: x * gridSize + gridSize / 2, // Center of grid position
+            y: y * gridSize + gridSize / 2,
+            vx: Math.cos(angle) * speed,
+            vy: Math.sin(angle) * speed,
+            size: size,
+            color: colors[Math.floor(Math.random() * colors.length)],
+            life: life,
+            maxLife: life
+        });
+    }
+}
+
+// Update particles (move them and reduce their life)
+function updateParticles() {
+    for (let i = particles.length - 1; i >= 0; i--) {
+        const p = particles[i];
+        
+        p.x += p.vx;
+        p.y += p.vy;
+        p.life--;
+        
+        // Remove dead particles
+        if (p.life <= 0) {
+            particles.splice(i, 1);
+        }
+    }
+}
+
+// Draw all active particles
+function drawParticles() {
+    for (let p of particles) {
+        ctx.globalAlpha = p.life / p.maxLife; // Fade out as life decreases
+        ctx.fillStyle = p.color;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+        ctx.fill();
+    }
+    ctx.globalAlpha = 1; // Reset alpha
+}
+
 // Game loop
 function gameLoop() {
     if (!gameRunning) return;
@@ -1013,11 +1127,17 @@ function gameLoop() {
         endGame();
         return;
     }
+
+    // In gameLoop function, add after movement and collision checks
+    updateParticles();
     
-    // Check if food eaten
+    // Check if food eaten (in gameLoop function)
     if (head.x === food.x && head.y === food.y) {
         // Add new head
         snake.unshift(head);
+        
+        // Create particles at food position
+        createParticles(food.x, food.y, 'food', 20);
         
         // Create new food
         createFood();
@@ -1040,6 +1160,10 @@ function gameLoop() {
         const powerUpIndex = powerUps.findIndex(p => p.x === head.x && p.y === head.y);
         if (powerUpIndex !== -1) {
             const powerUp = powerUps[powerUpIndex];
+            
+            // Create particles for the power-up
+            createParticles(powerUp.x, powerUp.y, powerUp.type.name, 25);
+            
             powerUps.splice(powerUpIndex, 1);
             activatePowerUp(powerUp);
             
@@ -1244,7 +1368,10 @@ function draw() {
                 ctx.fill();
             }
         }
+        
     }
+
+    
     
     // Draw power-ups
     for (let powerUp of powerUps) {
@@ -1272,18 +1399,48 @@ function draw() {
         ctx.fill();
     }
     
-    // Draw food (with animation effect)
-    ctx.fillStyle = '#ff4757';
-    const pulse = Math.sin(Date.now() / 200) * 2;
-    ctx.beginPath();
-    ctx.arc(
-        food.x * gridSize + gridSize / 2,
-        food.y * gridSize + gridSize / 2,
-        (gridSize / 2 - 2) + pulse,
-        0,
-        Math.PI * 2
-    );
-    ctx.fill();
+    // Draw food as cherry image with animation effect
+    const pulse = Math.sin(Date.now() / 200) * 0.2; // Smaller pulse for image scaling
+    const cherrySize = gridSize * 2; // 4x larger
+
+    if (cherryImg.complete && !cherryImg.loadFailed) {
+        // If image is loaded successfully, draw it
+        const scale = 1 + pulse;
+        
+        // Save the current context state
+        ctx.save();
+        
+        // Translate to the center of where the food should be
+        ctx.translate(food.x * gridSize + gridSize / 2, food.y * gridSize + gridSize / 2);
+        
+        // Scale the context with the pulse animation
+        ctx.scale(scale, scale);
+        
+        // Draw the cherry image centered
+        ctx.drawImage(
+            cherryImg,
+            -cherrySize / 2,
+            -cherrySize / 2,
+            cherrySize,
+            cherrySize
+        );
+        
+        // Restore the context to its original state
+        ctx.restore();
+    } else {
+        // Fallback if image is not loaded yet or failed to load
+        ctx.fillStyle = darkMode ? '#ffffff' : '#ff4757';
+        const circPulse = Math.sin(Date.now() / 200) * 2;
+        ctx.beginPath();
+        ctx.arc(
+            food.x * gridSize + gridSize / 2,
+            food.y * gridSize + gridSize / 2,
+            ((gridSize / 2 - 2) + circPulse) * 2,
+            0,
+            Math.PI * 2
+        );
+        ctx.fill();
+    }
     
     // Draw snake segments with gradient effect
     for (let i = 0; i < snake.length; i++) {
@@ -1359,6 +1516,8 @@ function draw() {
             ctx.fill();
         }
     }
+    // Draw particles on top of everything else
+    drawParticles();
 }
 
 // Start game
@@ -1372,6 +1531,15 @@ function startGame(levelNum = 1) {
         gameInfo.style.display = 'flex';
         gameOver.classList.remove('show');
         gameRunning = true;
+
+        // In the startGame function, after setting gameRunning = true
+        document.getElementById('pauseButton').classList.remove('play');
+        document.getElementById('pauseButton').innerHTML = `
+            <svg viewBox="0 0 24 24" width="24" height="24">
+                <rect x="6" y="4" width="4" height="16" fill="currentColor"/>
+                <rect x="14" y="4" width="4" height="16" fill="currentColor"/>
+            </svg>
+        `;
         
         // Start game loop
         gameInterval = setInterval(gameLoop, gameSpeed);
@@ -1505,15 +1673,30 @@ function toggleDarkMode() {
 }
 
 // Toggle pause
-function togglePause() {
-    if (gameRunning) {
-        gameRunning = false;
-        clearInterval(gameInterval);
-    } else {
-        gameRunning = true;
-        gameInterval = setInterval(gameLoop, gameSpeed);
+    function togglePause() {
+        if (gameRunning) {
+            gameRunning = false;
+            clearInterval(gameInterval);
+            // Update pause button to show play icon
+            document.getElementById('pauseButton').innerHTML = `
+                <svg viewBox="0 0 24 24" width="24" height="24">
+                    <polygon points="5,3 19,12 5,21" fill="currentColor"/>
+                </svg>
+            `;
+            document.getElementById('pauseButton').classList.add('play');
+        } else {
+            gameRunning = true;
+            gameInterval = setInterval(gameLoop, gameSpeed);
+            // Update pause button to show pause icon
+            document.getElementById('pauseButton').innerHTML = `
+                <svg viewBox="0 0 24 24" width="24" height="24">
+                    <rect x="6" y="4" width="4" height="16" fill="currentColor"/>
+                    <rect x="14" y="4" width="4" height="16" fill="currentColor"/>
+                </svg>
+            `;
+            document.getElementById('pauseButton').classList.remove('play');
+        }
     }
-}
 
 // Show loading indicator
 function showLoading() {
